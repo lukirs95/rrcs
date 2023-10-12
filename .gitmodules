@@ -1,0 +1,3 @@
+[submodule "includes/xmlrpc"]
+	path = includes/xmlrpc
+	url = https://github.com/lukirs95/xmlrpc.git
