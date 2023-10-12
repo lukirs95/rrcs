@@ -517,7 +517,7 @@ const { RRCSTransKey, RRCSNet, RRCSNode, RRCSPort } = require('./lib/types');
 const { Port } = require('./lib/Port');
 const { Method } = require('./lib/Method');
 const { Request } = require('./lib/request');
-const { XMLRPCClient } = require('./includes/xmlrpc');
+const { XMLRPCClient } = require('xmlrpc-client');
 
 module.exports.RRCSTransKey = RRCSTransKey;
 module.exports.RRCSNet = RRCSNet;
@@ -528,9 +528,8 @@ module.exports.Method = Method;
 module.exports.XMLRPCClient = XMLRPCClient;
 module.exports.RRCSRequest = Request;
 
-},{"./includes/xmlrpc":5,"./lib/Method":7,"./lib/Port":8,"./lib/request":10,"./lib/types":11}],7:[function(require,module,exports){
+},{"./lib/Method":7,"./lib/Port":8,"./lib/request":10,"./lib/types":11,"xmlrpc-client":5}],7:[function(require,module,exports){
 const { Port } = require('./Port');
-// const { RRCSNet, RRCSNode, RRCSPort } = require('./types');
 
 class Method {
   /**
@@ -773,7 +772,7 @@ module.exports.RRCSError = class RRCSError {
 };
 
 },{}],10:[function(require,module,exports){
-const { XMLRPCClient } = require('../includes/xmlrpc');
+const { XMLRPCClient } = require('xmlrpc-client');
 const { RRCSTransKey } = require('./types');
 const { Method } = require('./Method');
 const { RRCSError } = require('./errorcodes');
@@ -821,7 +820,7 @@ module.exports.Request = (client, gen, method) => {
   });
 };
 
-},{"../includes/xmlrpc":5,"./Method":7,"./errorcodes":9,"./types":11}],11:[function(require,module,exports){
+},{"./Method":7,"./errorcodes":9,"./types":11,"xmlrpc-client":5}],11:[function(require,module,exports){
 module.exports.RRCSTransKey = class RRCSTransKey {
   /**
    * Creates new TransKey. startChar needs to be excactly one character, otherwise returns undefined.
