@@ -1,0 +1,15 @@
+{
+  "name": "rrcs",
+  "version": "1.0.0",
+  "description": "This module let's you send commands to RRCS from Riedel",
+  "main": "index.js",
+  "scripts": {
+    "bundle": "browserify index.js --standalone RRCS > bundle.js"
+  },
+  "author": "Lucas Kirsche",
+  "license": "ISC",
+  "dependencies": {
+    "xmlrpc": "file:includes/xmlrpc",
+    "xmlrpc-client": "file:./includes/xmlrpc"
+  }
+}
