@@ -2,7 +2,7 @@
   "name": "rrcs",
   "version": "1.0.0",
   "description": "This module let's you send commands to RRCS from Riedel",
-  "main": "index.js",
+  "main": "bundle.js",
   "scripts": {
     "bundle": "browserify index.js --standalone RRCS > bundle.js"
   },

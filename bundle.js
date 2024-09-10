@@ -167,11 +167,12 @@ class Deserializer {
   // SAX Handlers
   //==============================================================================
   onOpentag(node) {
-    if (node.name === 'ARRAY' || node.name === 'STRUCT') {
+    const nodeName = node.name.toUpperCase();
+    if (nodeName === 'ARRAY' || nodeName === 'STRUCT') {
       this.marks.push(this.stack.length);
     }
     this.data = [];
-    this.value = node.name === 'VALUE';
+    this.value = nodeName === 'VALUE';
   }
 
   onText(text) {
@@ -342,7 +343,7 @@ class Deserializer {
 
 module.exports = Deserializer;
 
-},{"sax":12}],4:[function(require,module,exports){
+},{"sax":14}],4:[function(require,module,exports){
 (function (Buffer){(function (){
 const xmlBuilder = require('xmlbuilder');
 const { CustomType } = require('./customtype');
@@ -504,8 +505,8 @@ function appendBuffer(value, xml) {
   xml.ele('base64').txt(value.toString('base64'));
 }
 
-}).call(this)}).call(this,{"isBuffer":require("../../../../../../../../../../../../opt/homebrew/lib/node_modules/browserify/node_modules/is-buffer/index.js")})
-},{"../../../../../../../../../../../../opt/homebrew/lib/node_modules/browserify/node_modules/is-buffer/index.js":41,"./customtype":2,"xmlbuilder":34}],5:[function(require,module,exports){
+}).call(this)}).call(this,{"isBuffer":require("../../../../../../../../opt/homebrew/lib/node_modules/browserify/node_modules/is-buffer/index.js")})
+},{"../../../../../../../../opt/homebrew/lib/node_modules/browserify/node_modules/is-buffer/index.js":43,"./customtype":2,"xmlbuilder":36}],5:[function(require,module,exports){
 const { Client } = require('./client');
 const { CustomType } = require('./customtype');
 
@@ -516,7 +517,8 @@ module.exports.XMLRPCCustomType = CustomType;
 const { RRCSTransKey, RRCSNet, RRCSNode, RRCSPort } = require('./lib/types');
 const { Port } = require('./lib/Port');
 const { Method } = require('./lib/Method');
-const { Request } = require('./lib/request');
+const { RRCSRequest } = require('./lib/request');
+const { BuildVirtualPanel } = require('./lib/helpers');
 const { XMLRPCClient } = require('xmlrpc-client');
 
 module.exports.RRCSTransKey = RRCSTransKey;
@@ -526,10 +528,12 @@ module.exports.RRCSPort = RRCSPort;
 module.exports.Port = Port;
 module.exports.Method = Method;
 module.exports.XMLRPCClient = XMLRPCClient;
-module.exports.RRCSRequest = Request;
+module.exports.RRCSRequest = RRCSRequest;
+module.exports.BuildVirtualPanel = BuildVirtualPanel;
 
-},{"./lib/Method":7,"./lib/Port":8,"./lib/request":10,"./lib/types":11,"xmlrpc-client":5}],7:[function(require,module,exports){
+},{"./lib/Method":7,"./lib/Port":8,"./lib/helpers":11,"./lib/request":12,"./lib/types":13,"xmlrpc-client":5}],7:[function(require,module,exports){
 const { Port } = require('./Port');
+const Key = require('./VirtualKey');
 
 class Method {
   /**
@@ -571,6 +575,33 @@ class Method {
 
   /**
    *
+   * @param {Port} source
+   * @returns
+   */
+  static GetPortsCommandLists = (source) => {
+    return new Method('GetPortsCommandLists', [...source.full, true, -1]);
+  };
+
+  /**
+   *
+   * @param {Key} source
+   * @returns {Method}
+   */
+  static PressKey = (source) => {
+    return new Method('PressKey', [...source.PressKeyValues, true]);
+  };
+
+  /**
+   *
+   * @param {Key} source
+   * @returns {Method}
+   */
+  static ReleaseKey = (source) => {
+    return new Method('PressKey', [...source.PressKeyValues, false]);
+  };
+
+  /**
+   *
    * @param {string} method
    * @param {any[]} params
    */
@@ -592,7 +623,7 @@ module.exports = {
   Method
 };
 
-},{"./Port":8}],8:[function(require,module,exports){
+},{"./Port":8,"./VirtualKey":9}],8:[function(require,module,exports){
 const { RRCSNet, RRCSPort, RRCSNode } = require('./types');
 
 module.exports.Port = class Port {
@@ -620,20 +651,59 @@ module.exports.Port = class Port {
     return this._port.address;
   }
 
-  set net(net) {
-    this._net = net;
+  get net() {
+    return this._net;
   }
 
-  set node(node) {
-    this._node = node;
+  get node() {
+    return this._node;
   }
 
-  set port(port) {
-    this._port = port;
+  get port() {
+    return this._port;
   }
 };
 
-},{"./types":11}],9:[function(require,module,exports){
+},{"./types":13}],9:[function(require,module,exports){
+const { Port } = require('./Port');
+
+module.exports = class Key extends Port {
+  /**
+   *
+   * @param {Port} sourcePort
+   */
+  constructor(
+    sourcePort,
+    isInput,
+    page,
+    expansionPanel,
+    keyNumber,
+    isVirtualKey
+  ) {
+    super(sourcePort._net, sourcePort._node, sourcePort._port);
+    this.isInput = isInput;
+    this.page = page;
+    this.expansionPanel = expansionPanel;
+    this.keyNumber = keyNumber;
+    this.isVirtualKey = isVirtualKey;
+    this.name = null;
+  }
+
+  get PressKeyValues() {
+    return [
+      this.node,
+      this.port,
+      this.port,
+      this.isInput,
+      this.page,
+      this.expansionPanel,
+      this.keyNumber,
+      this.isVirtualKey
+    ];
+  }
+};
+
+},{"./Port":8}],10:[function(require,module,exports){
 module.exports.RRCSError = class RRCSError {
   static Success = new RRCSError(0, 'Success', 'Success');
   static TransactionKeyInvalid = new RRCSError(
@@ -771,46 +841,139 @@ module.exports.RRCSError = class RRCSError {
   }
 };
 
-},{}],10:[function(require,module,exports){
+},{}],11:[function(require,module,exports){
+const { XMLRPCClient } = require('xmlrpc-client');
+const { Method } = require('./Method');
+const { Port } = require('./Port');
+const Key = require('./VirtualKey');
+const { RRCSRequest } = require('./request');
+const { RRCSNet, RRCSPort, RRCSNode, RRCSTransKey } = require('./types');
+
+/**
+ *
+ * @param {XMLRPCClient} client
+ * @param {RRCSTransKey} transKeyGen
+ * @param {Port} port
+ * @returns {Promise<string>}
+ */
+function GetPortLabel(client, transKeyGen, port) {
+  const getPortLabelMethod = Method.GetPortLabel(port);
+  return RRCSRequest(client, transKeyGen, getPortLabelMethod);
+}
+
+/**
+ *
+ * @param {XMLRPCClient} client
+ * @param {RRCSTransKey} transKeyGen
+ * @param {Port} port
+ * @returns {Promise<Object[]>}
+ */
+function GetVirtualKeys(client, transKeyGen, port) {
+  const getPortCommandList = Method.GetPortsCommandLists(port);
+
+  return RRCSRequest(client, transKeyGen, getPortCommandList).then((response) =>
+    Promise.resolve(
+      response
+        .filter((cmd) => cmd.CommandPosition.PositionType == 'virtual-key')
+        .map((cmd) => {
+          const pos = cmd.CommandPosition;
+          const destPortAddress = cmd.CommandList[0].DestinationPortAddress;
+          const destNet = new RRCSNet(destPortAddress.Net);
+          const destNode = new RRCSNode(destPortAddress.Node);
+          const destPort = new RRCSPort(destPortAddress.Port);
+          const Destination = new Port(destNet, destNode, destPort);
+          return {
+            Dest: Destination,
+            Key: new Key(
+              port,
+              pos.IsInput,
+              pos.Page,
+              pos.ExpansionPanel,
+              pos.KeyNumber,
+              true
+            )
+          };
+        })
+    )
+  );
+}
+
+/**
+ *
+ * @param {XMLRPCClient} client
+ * @param {RRCSTransKey} transKeyGen
+ * @param {Port} port
+ * @returns {Promise<Object[]>}
+ */
+function BuildVirtualPanel(client, transKeyGen, port) {
+  return GetVirtualKeys(client, transKeyGen, port).then((keys) =>
+    Promise.all(
+      keys.map((key) => GetPortLabel(client, transKeyGen, key.Dest))
+    ).then((portLabels) => {
+      return Promise.resolve(
+        portLabels.map((portLabel, index) => {
+          keys[index].label = portLabel;
+          return keys[index];
+        })
+      );
+    })
+  );
+}
+
+module.exports.BuildVirtualPanel = BuildVirtualPanel;
+
+},{"./Method":7,"./Port":8,"./VirtualKey":9,"./request":12,"./types":13,"xmlrpc-client":5}],12:[function(require,module,exports){
 const { XMLRPCClient } = require('xmlrpc-client');
 const { RRCSTransKey } = require('./types');
 const { Method } = require('./Method');
 const { RRCSError } = require('./errorcodes');
+
 /**
  *
  * @param {XMLRPCClient} client
  * @param {RRCSTransKey} gen
  * @param {Method} method
- * @returns {Promise<Object>}
+ * @returns {Promise<any>}
  */
 
-module.exports.Request = (client, gen, method) => {
+const Request = (client, gen, method) => {
   const transKey = gen.getNext();
   return new Promise((resolve, reject) => {
     client
       .methodCall(method.method, [transKey, ...method.params])
       .then((response) => {
-        if (response[0] !== transKey) {
-          reject('TransmissionKey does not match');
-          return;
-        }
-        if (response[1] != RRCSError.Success.code) {
-          reject(RRCSError.Find(response[1]).description);
-          return;
+        if ('TransKey' in response) {
+          if (response.TransKey !== transKey) {
+            reject({
+              Reason: 'TransmissionKey does not match',
+              Response: response
+            });
+          }
+        } else {
+          if (response[0] !== transKey) {
+            reject({
+              Reason: 'TransmissionKey does not match',
+              Response: response
+            });
+            return;
+          }
+          if (response[1] != RRCSError.Success.code) {
+            reject(RRCSError.Find(response[1]).description);
+            return;
+          }
         }
         switch (method.method) {
           case 'SetXp':
-            resolve(true);
-            break;
           case 'KillXp':
+          case 'PressKey':
             resolve(true);
             break;
           case 'GetPortLabel':
-            resolve(response[2]);
-            break;
           case 'GetPortAlias':
             resolve(response[2]);
             break;
+          case 'GetPortsCommandLists':
+            resolve(response.CommandLists);
 
           default:
             reject('no matching method found');
@@ -820,7 +983,9 @@ module.exports.Request = (client, gen, method) => {
   });
 };
 
-},{"./Method":7,"./errorcodes":9,"./types":11,"xmlrpc-client":5}],11:[function(require,module,exports){
+module.exports.RRCSRequest = Request;
+
+},{"./Method":7,"./errorcodes":10,"./types":13,"xmlrpc-client":5}],13:[function(require,module,exports){
 module.exports.RRCSTransKey = class RRCSTransKey {
   /**
    * Creates new TransKey. startChar needs to be excactly one character, otherwise returns undefined.
@@ -1212,7 +1377,7 @@ module.exports.RRCSLineStatus = {
   LineIsBusy: 3
 };
 
-},{}],12:[function(require,module,exports){
+},{}],14:[function(require,module,exports){
 (function (Buffer){(function (){
 ;(function (sax) { // wrapper for non-node envs
   sax.parser = function (strict, opt) { return new SAXParser(strict, opt) }
@@ -2781,7 +2946,7 @@ module.exports.RRCSLineStatus = {
 })(typeof exports === 'undefined' ? this.sax = {} : exports)
 
 }).call(this)}).call(this,require("buffer").Buffer)
-},{"buffer":37,"stream":44,"string_decoder":59}],13:[function(require,module,exports){
+},{"buffer":39,"stream":46,"string_decoder":61}],15:[function(require,module,exports){
 // Generated by CoffeeScript 1.10.0
 (function() {
   var assign, camelCase, capitalize, isArray, isEmpty, isFunction, isObject, isPlainObject, kebabCase, snakeCase, titleCase, words,
@@ -2922,7 +3087,7 @@ module.exports.RRCSLineStatus = {
 
 }).call(this);
 
-},{}],14:[function(require,module,exports){
+},{}],16:[function(require,module,exports){
 // Generated by CoffeeScript 1.10.0
 (function() {
   var XMLAttribute;
@@ -2955,7 +3120,7 @@ module.exports.RRCSLineStatus = {
 
 }).call(this);
 
-},{}],15:[function(require,module,exports){
+},{}],17:[function(require,module,exports){
 // Generated by CoffeeScript 1.10.0
 (function() {
   var XMLCData, XMLNode,
@@ -2989,7 +3154,7 @@ module.exports.RRCSLineStatus = {
 
 }).call(this);
 
-},{"./XMLNode":26}],16:[function(require,module,exports){
+},{"./XMLNode":28}],18:[function(require,module,exports){
 // Generated by CoffeeScript 1.10.0
 (function() {
   var XMLComment, XMLNode,
@@ -3023,7 +3188,7 @@ module.exports.RRCSLineStatus = {
 
 }).call(this);
 
-},{"./XMLNode":26}],17:[function(require,module,exports){
+},{"./XMLNode":28}],19:[function(require,module,exports){
 // Generated by CoffeeScript 1.10.0
 (function() {
   var XMLDTDAttList, XMLNode,
@@ -3075,7 +3240,7 @@ module.exports.RRCSLineStatus = {
 
 }).call(this);
 
-},{"./XMLNode":26}],18:[function(require,module,exports){
+},{"./XMLNode":28}],20:[function(require,module,exports){
 // Generated by CoffeeScript 1.10.0
 (function() {
   var XMLDTDElement, XMLNode,
@@ -3112,7 +3277,7 @@ module.exports.RRCSLineStatus = {
 
 }).call(this);
 
-},{"./XMLNode":26}],19:[function(require,module,exports){
+},{"./XMLNode":28}],21:[function(require,module,exports){
 // Generated by CoffeeScript 1.10.0
 (function() {
   var XMLDTDEntity, XMLNode, isObject,
@@ -3170,7 +3335,7 @@ module.exports.RRCSLineStatus = {
 
 }).call(this);
 
-},{"./Utility":13,"./XMLNode":26}],20:[function(require,module,exports){
+},{"./Utility":15,"./XMLNode":28}],22:[function(require,module,exports){
 // Generated by CoffeeScript 1.10.0
 (function() {
   var XMLDTDNotation, XMLNode,
@@ -3209,7 +3374,7 @@ module.exports.RRCSLineStatus = {
 
 }).call(this);
 
-},{"./XMLNode":26}],21:[function(require,module,exports){
+},{"./XMLNode":28}],23:[function(require,module,exports){
 // Generated by CoffeeScript 1.10.0
 (function() {
   var XMLDeclaration, XMLNode, isObject,
@@ -3251,7 +3416,7 @@ module.exports.RRCSLineStatus = {
 
 }).call(this);
 
-},{"./Utility":13,"./XMLNode":26}],22:[function(require,module,exports){
+},{"./Utility":15,"./XMLNode":28}],24:[function(require,module,exports){
 // Generated by CoffeeScript 1.10.0
 (function() {
   var XMLDTDAttList, XMLDTDElement, XMLDTDEntity, XMLDTDNotation, XMLDocType, XMLNode, isObject,
@@ -3360,7 +3525,7 @@ module.exports.RRCSLineStatus = {
 
 }).call(this);
 
-},{"./Utility":13,"./XMLDTDAttList":17,"./XMLDTDElement":18,"./XMLDTDEntity":19,"./XMLDTDNotation":20,"./XMLNode":26}],23:[function(require,module,exports){
+},{"./Utility":15,"./XMLDTDAttList":19,"./XMLDTDElement":20,"./XMLDTDEntity":21,"./XMLDTDNotation":22,"./XMLNode":28}],25:[function(require,module,exports){
 // Generated by CoffeeScript 1.10.0
 (function() {
   var XMLDocument, XMLNode, XMLStringWriter, XMLStringifier, isPlainObject,
@@ -3410,7 +3575,7 @@ module.exports.RRCSLineStatus = {
 
 }).call(this);
 
-},{"./Utility":13,"./XMLNode":26,"./XMLStringWriter":30,"./XMLStringifier":31}],24:[function(require,module,exports){
+},{"./Utility":15,"./XMLNode":28,"./XMLStringWriter":32,"./XMLStringifier":33}],26:[function(require,module,exports){
 // Generated by CoffeeScript 1.10.0
 (function() {
   var XMLAttribute, XMLCData, XMLComment, XMLDTDAttList, XMLDTDElement, XMLDTDEntity, XMLDTDNotation, XMLDeclaration, XMLDocType, XMLDocumentCB, XMLElement, XMLProcessingInstruction, XMLRaw, XMLStringWriter, XMLStringifier, XMLText, isFunction, isObject, isPlainObject, ref,
@@ -3814,7 +3979,7 @@ module.exports.RRCSLineStatus = {
 
 }).call(this);
 
-},{"./Utility":13,"./XMLAttribute":14,"./XMLCData":15,"./XMLComment":16,"./XMLDTDAttList":17,"./XMLDTDElement":18,"./XMLDTDEntity":19,"./XMLDTDNotation":20,"./XMLDeclaration":21,"./XMLDocType":22,"./XMLElement":25,"./XMLProcessingInstruction":27,"./XMLRaw":28,"./XMLStringWriter":30,"./XMLStringifier":31,"./XMLText":32}],25:[function(require,module,exports){
+},{"./Utility":15,"./XMLAttribute":16,"./XMLCData":17,"./XMLComment":18,"./XMLDTDAttList":19,"./XMLDTDElement":20,"./XMLDTDEntity":21,"./XMLDTDNotation":22,"./XMLDeclaration":23,"./XMLDocType":24,"./XMLElement":27,"./XMLProcessingInstruction":29,"./XMLRaw":30,"./XMLStringWriter":32,"./XMLStringifier":33,"./XMLText":34}],27:[function(require,module,exports){
 // Generated by CoffeeScript 1.10.0
 (function() {
   var XMLAttribute, XMLElement, XMLNode, isFunction, isObject, ref,
@@ -3927,7 +4092,7 @@ module.exports.RRCSLineStatus = {
 
 }).call(this);
 
-},{"./Utility":13,"./XMLAttribute":14,"./XMLNode":26}],26:[function(require,module,exports){
+},{"./Utility":15,"./XMLAttribute":16,"./XMLNode":28}],28:[function(require,module,exports){
 // Generated by CoffeeScript 1.10.0
 (function() {
   var XMLCData, XMLComment, XMLDeclaration, XMLDocType, XMLElement, XMLNode, XMLProcessingInstruction, XMLRaw, XMLText, isEmpty, isFunction, isObject, ref,
@@ -4361,7 +4526,7 @@ module.exports.RRCSLineStatus = {
 
 }).call(this);
 
-},{"./Utility":13,"./XMLCData":15,"./XMLComment":16,"./XMLDeclaration":21,"./XMLDocType":22,"./XMLElement":25,"./XMLProcessingInstruction":27,"./XMLRaw":28,"./XMLText":32}],27:[function(require,module,exports){
+},{"./Utility":15,"./XMLCData":17,"./XMLComment":18,"./XMLDeclaration":23,"./XMLDocType":24,"./XMLElement":27,"./XMLProcessingInstruction":29,"./XMLRaw":30,"./XMLText":34}],29:[function(require,module,exports){
 // Generated by CoffeeScript 1.10.0
 (function() {
   var XMLNode, XMLProcessingInstruction,
@@ -4398,7 +4563,7 @@ module.exports.RRCSLineStatus = {
 
 }).call(this);
 
-},{"./XMLNode":26}],28:[function(require,module,exports){
+},{"./XMLNode":28}],30:[function(require,module,exports){
 // Generated by CoffeeScript 1.10.0
 (function() {
   var XMLNode, XMLRaw,
@@ -4432,7 +4597,7 @@ module.exports.RRCSLineStatus = {
 
 }).call(this);
 
-},{"./XMLNode":26}],29:[function(require,module,exports){
+},{"./XMLNode":28}],31:[function(require,module,exports){
 // Generated by CoffeeScript 1.10.0
 (function() {
   var XMLCData, XMLComment, XMLDTDAttList, XMLDTDElement, XMLDTDEntity, XMLDTDNotation, XMLDeclaration, XMLDocType, XMLElement, XMLProcessingInstruction, XMLRaw, XMLStreamWriter, XMLText, XMLWriterBase,
@@ -4712,7 +4877,7 @@ module.exports.RRCSLineStatus = {
 
 }).call(this);
 
-},{"./XMLCData":15,"./XMLComment":16,"./XMLDTDAttList":17,"./XMLDTDElement":18,"./XMLDTDEntity":19,"./XMLDTDNotation":20,"./XMLDeclaration":21,"./XMLDocType":22,"./XMLElement":25,"./XMLProcessingInstruction":27,"./XMLRaw":28,"./XMLText":32,"./XMLWriterBase":33}],30:[function(require,module,exports){
+},{"./XMLCData":17,"./XMLComment":18,"./XMLDTDAttList":19,"./XMLDTDElement":20,"./XMLDTDEntity":21,"./XMLDTDNotation":22,"./XMLDeclaration":23,"./XMLDocType":24,"./XMLElement":27,"./XMLProcessingInstruction":29,"./XMLRaw":30,"./XMLText":34,"./XMLWriterBase":35}],32:[function(require,module,exports){
 // Generated by CoffeeScript 1.10.0
 (function() {
   var XMLCData, XMLComment, XMLDTDAttList, XMLDTDElement, XMLDTDEntity, XMLDTDNotation, XMLDeclaration, XMLDocType, XMLElement, XMLProcessingInstruction, XMLRaw, XMLStringWriter, XMLText, XMLWriterBase,
@@ -5016,7 +5181,7 @@ module.exports.RRCSLineStatus = {
 
 }).call(this);
 
-},{"./XMLCData":15,"./XMLComment":16,"./XMLDTDAttList":17,"./XMLDTDElement":18,"./XMLDTDEntity":19,"./XMLDTDNotation":20,"./XMLDeclaration":21,"./XMLDocType":22,"./XMLElement":25,"./XMLProcessingInstruction":27,"./XMLRaw":28,"./XMLText":32,"./XMLWriterBase":33}],31:[function(require,module,exports){
+},{"./XMLCData":17,"./XMLComment":18,"./XMLDTDAttList":19,"./XMLDTDElement":20,"./XMLDTDEntity":21,"./XMLDTDNotation":22,"./XMLDeclaration":23,"./XMLDocType":24,"./XMLElement":27,"./XMLProcessingInstruction":29,"./XMLRaw":30,"./XMLText":34,"./XMLWriterBase":35}],33:[function(require,module,exports){
 // Generated by CoffeeScript 1.10.0
 (function() {
   var XMLStringifier, camelCase, kebabCase, ref, snakeCase, titleCase,
@@ -5210,7 +5375,7 @@ module.exports.RRCSLineStatus = {
 
 }).call(this);
 
-},{"./Utility":13}],32:[function(require,module,exports){
+},{"./Utility":15}],34:[function(require,module,exports){
 // Generated by CoffeeScript 1.10.0
 (function() {
   var XMLNode, XMLText,
@@ -5244,7 +5409,7 @@ module.exports.RRCSLineStatus = {
 
 }).call(this);
 
-},{"./XMLNode":26}],33:[function(require,module,exports){
+},{"./XMLNode":28}],35:[function(require,module,exports){
 // Generated by CoffeeScript 1.10.0
 (function() {
   var XMLWriterBase,
@@ -5314,7 +5479,7 @@ module.exports.RRCSLineStatus = {
 
 }).call(this);
 
-},{}],34:[function(require,module,exports){
+},{}],36:[function(require,module,exports){
 // Generated by CoffeeScript 1.10.0
 (function() {
   var XMLDocument, XMLDocumentCB, XMLStreamWriter, XMLStringWriter, assign, isFunction, ref;
@@ -5369,7 +5534,7 @@ module.exports.RRCSLineStatus = {
 
 }).call(this);
 
-},{"./Utility":13,"./XMLDocument":23,"./XMLDocumentCB":24,"./XMLStreamWriter":29,"./XMLStringWriter":30}],35:[function(require,module,exports){
+},{"./Utility":15,"./XMLDocument":25,"./XMLDocumentCB":26,"./XMLStreamWriter":31,"./XMLStringWriter":32}],37:[function(require,module,exports){
 'use strict'
 
 exports.byteLength = byteLength
@@ -5521,9 +5686,9 @@ function fromByteArray (uint8) {
   return parts.join('')
 }
 
-},{}],36:[function(require,module,exports){
+},{}],38:[function(require,module,exports){
 
-},{}],37:[function(require,module,exports){
+},{}],39:[function(require,module,exports){
 (function (Buffer){(function (){
 /*!
  * The buffer module from node.js, for the browser.
@@ -7304,7 +7469,7 @@ function numberIsNaN (obj) {
 }
 
 }).call(this)}).call(this,require("buffer").Buffer)
-},{"base64-js":35,"buffer":37,"ieee754":39}],38:[function(require,module,exports){
+},{"base64-js":37,"buffer":39,"ieee754":41}],40:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -7803,7 +7968,7 @@ function eventTargetAgnosticAddListener(emitter, name, listener, flags) {
   }
 }
 
-},{}],39:[function(require,module,exports){
+},{}],41:[function(require,module,exports){
 /*! ieee754. BSD-3-Clause License. Feross Aboukhadijeh <https://feross.org/opensource> */
 exports.read = function (buffer, offset, isLE, mLen, nBytes) {
   var e, m
@@ -7890,7 +8055,7 @@ exports.write = function (buffer, value, offset, isLE, mLen, nBytes) {
   buffer[offset + i - d] |= s * 128
 }
 
-},{}],40:[function(require,module,exports){
+},{}],42:[function(require,module,exports){
 if (typeof Object.create === 'function') {
   // implementation from standard node.js 'util' module
   module.exports = function inherits(ctor, superCtor) {
@@ -7919,7 +8084,7 @@ if (typeof Object.create === 'function') {
   }
 }
 
-},{}],41:[function(require,module,exports){
+},{}],43:[function(require,module,exports){
 /*!
  * Determine if an object is a Buffer
  *
@@ -7942,7 +8107,7 @@ function isSlowBuffer (obj) {
   return typeof obj.readFloatLE === 'function' && typeof obj.slice === 'function' && isBuffer(obj.slice(0, 0))
 }
 
-},{}],42:[function(require,module,exports){
+},{}],44:[function(require,module,exports){
 // shim for using process in browser
 var process = module.exports = {};
 
@@ -8128,7 +8293,7 @@ process.chdir = function (dir) {
 };
 process.umask = function() { return 0; };
 
-},{}],43:[function(require,module,exports){
+},{}],45:[function(require,module,exports){
 /*! safe-buffer. MIT License. Feross Aboukhadijeh <https://feross.org/opensource> */
 /* eslint-disable node/no-deprecated-api */
 var buffer = require('buffer')
@@ -8195,7 +8360,7 @@ SafeBuffer.allocUnsafeSlow = function (size) {
   return buffer.SlowBuffer(size)
 }
 
-},{"buffer":37}],44:[function(require,module,exports){
+},{"buffer":39}],46:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -8326,7 +8491,7 @@ Stream.prototype.pipe = function(dest, options) {
   return dest;
 };
 
-},{"events":38,"inherits":40,"readable-stream/lib/_stream_duplex.js":46,"readable-stream/lib/_stream_passthrough.js":47,"readable-stream/lib/_stream_readable.js":48,"readable-stream/lib/_stream_transform.js":49,"readable-stream/lib/_stream_writable.js":50,"readable-stream/lib/internal/streams/end-of-stream.js":54,"readable-stream/lib/internal/streams/pipeline.js":56}],45:[function(require,module,exports){
+},{"events":40,"inherits":42,"readable-stream/lib/_stream_duplex.js":48,"readable-stream/lib/_stream_passthrough.js":49,"readable-stream/lib/_stream_readable.js":50,"readable-stream/lib/_stream_transform.js":51,"readable-stream/lib/_stream_writable.js":52,"readable-stream/lib/internal/streams/end-of-stream.js":56,"readable-stream/lib/internal/streams/pipeline.js":58}],47:[function(require,module,exports){
 'use strict';
 
 function _inheritsLoose(subClass, superClass) { subClass.prototype = Object.create(superClass.prototype); subClass.prototype.constructor = subClass; subClass.__proto__ = superClass; }
@@ -8455,7 +8620,7 @@ createErrorType('ERR_UNKNOWN_ENCODING', function (arg) {
 createErrorType('ERR_STREAM_UNSHIFT_AFTER_END_EVENT', 'stream.unshift() after end event');
 module.exports.codes = codes;
 
-},{}],46:[function(require,module,exports){
+},{}],48:[function(require,module,exports){
 (function (process){(function (){
 // Copyright Joyent, Inc. and other Node contributors.
 //
@@ -8584,7 +8749,7 @@ Object.defineProperty(Duplex.prototype, 'destroyed', {
   }
 });
 }).call(this)}).call(this,require('_process'))
-},{"./_stream_readable":48,"./_stream_writable":50,"_process":42,"inherits":40}],47:[function(require,module,exports){
+},{"./_stream_readable":50,"./_stream_writable":52,"_process":44,"inherits":42}],49:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -8622,7 +8787,7 @@ function PassThrough(options) {
 PassThrough.prototype._transform = function (chunk, encoding, cb) {
   cb(null, chunk);
 };
-},{"./_stream_transform":49,"inherits":40}],48:[function(require,module,exports){
+},{"./_stream_transform":51,"inherits":42}],50:[function(require,module,exports){
 (function (process,global){(function (){
 // Copyright Joyent, Inc. and other Node contributors.
 //
@@ -9652,7 +9817,7 @@ function indexOf(xs, x) {
   return -1;
 }
 }).call(this)}).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"../errors":45,"./_stream_duplex":46,"./internal/streams/async_iterator":51,"./internal/streams/buffer_list":52,"./internal/streams/destroy":53,"./internal/streams/from":55,"./internal/streams/state":57,"./internal/streams/stream":58,"_process":42,"buffer":37,"events":38,"inherits":40,"string_decoder/":59,"util":36}],49:[function(require,module,exports){
+},{"../errors":47,"./_stream_duplex":48,"./internal/streams/async_iterator":53,"./internal/streams/buffer_list":54,"./internal/streams/destroy":55,"./internal/streams/from":57,"./internal/streams/state":59,"./internal/streams/stream":60,"_process":44,"buffer":39,"events":40,"inherits":42,"string_decoder/":61,"util":38}],51:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -9843,7 +10008,7 @@ function done(stream, er, data) {
   if (stream._transformState.transforming) throw new ERR_TRANSFORM_ALREADY_TRANSFORMING();
   return stream.push(null);
 }
-},{"../errors":45,"./_stream_duplex":46,"inherits":40}],50:[function(require,module,exports){
+},{"../errors":47,"./_stream_duplex":48,"inherits":42}],52:[function(require,module,exports){
 (function (process,global){(function (){
 // Copyright Joyent, Inc. and other Node contributors.
 //
@@ -10487,7 +10652,7 @@ Writable.prototype._destroy = function (err, cb) {
   cb(err);
 };
 }).call(this)}).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"../errors":45,"./_stream_duplex":46,"./internal/streams/destroy":53,"./internal/streams/state":57,"./internal/streams/stream":58,"_process":42,"buffer":37,"inherits":40,"util-deprecate":60}],51:[function(require,module,exports){
+},{"../errors":47,"./_stream_duplex":48,"./internal/streams/destroy":55,"./internal/streams/state":59,"./internal/streams/stream":60,"_process":44,"buffer":39,"inherits":42,"util-deprecate":62}],53:[function(require,module,exports){
 (function (process){(function (){
 'use strict';
 
@@ -10670,7 +10835,7 @@ var createReadableStreamAsyncIterator = function createReadableStreamAsyncIterat
 };
 module.exports = createReadableStreamAsyncIterator;
 }).call(this)}).call(this,require('_process'))
-},{"./end-of-stream":54,"_process":42}],52:[function(require,module,exports){
+},{"./end-of-stream":56,"_process":44}],54:[function(require,module,exports){
 'use strict';
 
 function ownKeys(object, enumerableOnly) { var keys = Object.keys(object); if (Object.getOwnPropertySymbols) { var symbols = Object.getOwnPropertySymbols(object); enumerableOnly && (symbols = symbols.filter(function (sym) { return Object.getOwnPropertyDescriptor(object, sym).enumerable; })), keys.push.apply(keys, symbols); } return keys; }
@@ -10854,7 +11019,7 @@ module.exports = /*#__PURE__*/function () {
   }]);
   return BufferList;
 }();
-},{"buffer":37,"util":36}],53:[function(require,module,exports){
+},{"buffer":39,"util":38}],55:[function(require,module,exports){
 (function (process){(function (){
 'use strict';
 
@@ -10953,7 +11118,7 @@ module.exports = {
   errorOrDestroy: errorOrDestroy
 };
 }).call(this)}).call(this,require('_process'))
-},{"_process":42}],54:[function(require,module,exports){
+},{"_process":44}],56:[function(require,module,exports){
 // Ported from https://github.com/mafintosh/end-of-stream with
 // permission from the author, Mathias Buus (@mafintosh).
 
@@ -11040,12 +11205,12 @@ function eos(stream, opts, callback) {
   };
 }
 module.exports = eos;
-},{"../../../errors":45}],55:[function(require,module,exports){
+},{"../../../errors":47}],57:[function(require,module,exports){
 module.exports = function () {
   throw new Error('Readable.from is not available in the browser')
 };
 
-},{}],56:[function(require,module,exports){
+},{}],58:[function(require,module,exports){
 // Ported from https://github.com/mafintosh/pump with
 // permission from the author, Mathias Buus (@mafintosh).
 
@@ -11132,7 +11297,7 @@ function pipeline() {
   return streams.reduce(pipe);
 }
 module.exports = pipeline;
-},{"../../../errors":45,"./end-of-stream":54}],57:[function(require,module,exports){
+},{"../../../errors":47,"./end-of-stream":56}],59:[function(require,module,exports){
 'use strict';
 
 var ERR_INVALID_OPT_VALUE = require('../../../errors').codes.ERR_INVALID_OPT_VALUE;
@@ -11155,10 +11320,10 @@ function getHighWaterMark(state, options, duplexKey, isDuplex) {
 module.exports = {
   getHighWaterMark: getHighWaterMark
 };
-},{"../../../errors":45}],58:[function(require,module,exports){
+},{"../../../errors":47}],60:[function(require,module,exports){
 module.exports = require('events').EventEmitter;
 
-},{"events":38}],59:[function(require,module,exports){
+},{"events":40}],61:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -11455,7 +11620,7 @@ function simpleWrite(buf) {
 function simpleEnd(buf) {
   return buf && buf.length ? this.write(buf) : '';
 }
-},{"safe-buffer":43}],60:[function(require,module,exports){
+},{"safe-buffer":45}],62:[function(require,module,exports){
 (function (global){(function (){
 
 /**
